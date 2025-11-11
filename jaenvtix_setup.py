@@ -53,7 +53,7 @@ import sys
 import tarfile
 import time
 import zipfile
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -730,22 +730,24 @@ def select_jdk_dist(java_version: str, os_name: str, arch: str) -> List[JdkDist]
     return candidates
 
 
-def ensure_jdk(java_version: str, os_name: str, arch: str) -> Optional[Path]:
-    """Install the requested JDK if needed and return the resulting JAVA_HOME."""
+def _jdk_base(java_version: str) -> Path:
+    return JAENVTIX_HOME / f"jdk-{java_version}"
 
-    jdk_base = JAENVTIX_HOME / f"jdk-{java_version}"
-    jdk_base.mkdir(parents=True, exist_ok=True)
 
-    # Detectar se já existe JDK extraído
-    existing = None
-    if jdk_base.exists():
-        for ch in jdk_base.iterdir():
-            if ch.is_dir() and (ch / "bin").exists():
-                existing = ch
-                break
-    if existing:
-        log(f"[OK] JDK já presente: {existing}")
-        return existing
+def locate_existing_jdk(java_version: str) -> Optional[Path]:
+    """Check if a JDK is already installed for the given major version."""
+
+    jdk_base = _jdk_base(java_version)
+    if not jdk_base.exists():
+        return None
+    for ch in jdk_base.iterdir():
+        if ch.is_dir() and (ch / "bin").exists():
+            return ch
+    return None
+
+
+def download_jdk_package(java_version: str, os_name: str, arch: str) -> Optional[Tuple[Path, JdkDist]]:
+    """Download a JDK archive using the configured preference order."""
 
     candidates = select_jdk_dist(java_version, os_name, arch)
     if not candidates:
@@ -754,60 +756,79 @@ def ensure_jdk(java_version: str, os_name: str, arch: str) -> Optional[Path]:
 
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
-    last_err = None
+    last_err: Optional[Exception] = None
     for dist in candidates:
         try:
-            log(f"[INFO] Tentando JDK de {dist.name} para Java {java_version} ({os_name}/{arch})")
-            archive_name = f"jdk-{java_version}-{dist.name}.{dist.ext}"
-            archive_path = TEMP_DIR / archive_name
-            if not download_with_retries(dist.url, archive_path):
-                raise RuntimeError("download_failed")
-            # Limpar destino antes de extrair para evitar sobras de tentativa anterior
-            for ch in jdk_base.iterdir():
-                try:
-                    if ch.is_dir():
-                        shutil.rmtree(ch, ignore_errors=True)
-                    else:
-                        ch.unlink(missing_ok=True)
-                except Exception:
-                    pass
-            if not extract_archive(archive_path, jdk_base):
-                raise RuntimeError("extract_failed")
-            # Detectar pasta JDK após extração
-            extracted_home = None
-            for ch in jdk_base.iterdir():
-                if ch.is_dir() and (ch / "bin").exists():
-                    extracted_home = ch
-                    break
-            if not extracted_home:
-                subs = [p for p in jdk_base.glob("**/bin") if p.is_dir()]
-                if subs:
-                    extracted_home = subs[0].parent
-            if extracted_home:
-                log(f"[OK] JDK instalado com {dist.name} em: {extracted_home}")
-                return extracted_home
-            else:
-                raise RuntimeError("jdk_home_not_found")
-        except Exception as e:
-            last_err = e
-            log(f"[WARN] Falha com distribuidor {dist.name}: {e}. Tentando próximo...")
-            continue
-
-    log(f"[ERRO] Instalação JDK falhou após testar {len(candidates)} distribuidores. Último erro: {last_err}")
+            log(f"[INFO] Tentando download do JDK {dist.name} ({os_name}/{arch})")
+            archive = TEMP_DIR / f"jdk-{java_version}-{dist.name}.{dist.ext}"
+            if download_with_retries(dist.url, archive):
+                return archive, dist
+            raise RuntimeError("download_failed")
+        except Exception as exc:  # noqa: PERF203 (explicitar o erro capturado)
+            last_err = exc
+            log(f"[WARN] Falha ao baixar {dist.name}: {exc}. Tentando próximo...")
+    log(
+        f"[ERRO] Falha ao baixar JDK após testar {len(candidates)} distribuidores. Último erro: {last_err}"
+    )
     return None
 
 
-def ensure_maven(java_version: str, os_name: str) -> Optional[Tuple[Path, Path]]:
-    """Install a Maven distribution tied to the selected JDK and return paths."""
+def _cleanup_old_jdk_content(jdk_base: Path) -> None:
+    for child in jdk_base.iterdir():
+        if child.name == "mvn-custom":
+            continue
+        try:
+            if child.is_dir():
+                shutil.rmtree(child, ignore_errors=True)
+            else:
+                child.unlink(missing_ok=True)
+        except Exception:
+            pass
 
-    jdk_base = JAENVTIX_HOME / f"jdk-{java_version}"
+
+def install_jdk_from_archive(java_version: str, archive: Path, dist: JdkDist) -> Optional[Path]:
+    """Extract a downloaded JDK archive into the Jaenvtix layout."""
+
+    jdk_base = _jdk_base(java_version)
+    jdk_base.mkdir(parents=True, exist_ok=True)
+
+    _cleanup_old_jdk_content(jdk_base)
+    if not extract_archive(archive, jdk_base):
+        log("[ERRO] Falha ao extrair o JDK baixado.")
+        return None
+
+    extracted_home: Optional[Path] = None
+    for ch in jdk_base.iterdir():
+        if ch.is_dir() and (ch / "bin").exists():
+            extracted_home = ch
+            break
+    if not extracted_home:
+        subs = [p for p in jdk_base.glob("**/bin") if p.is_dir()]
+        if subs:
+            extracted_home = subs[0].parent
+
+    if extracted_home:
+        log(f"[OK] JDK instalado com {dist.name} em: {extracted_home}")
+        return extracted_home
+
+    log("[ERRO] Estrutura do JDK não encontrada após extração.")
+    return None
+
+
+def locate_existing_maven(java_version: str, os_name: str) -> Optional[Tuple[Path, Path]]:
+    """Check if Maven already exists for the JDK version."""
+
+    jdk_base = _jdk_base(java_version)
     mvn_custom = jdk_base / "mvn-custom"
-    mvn_bin_dir = mvn_custom / "bin"
-    mvn_exe = mvn_bin_dir / ("mvn.cmd" if os_name == "windows" else "mvn")
-    mvn_bin_dir.mkdir(parents=True, exist_ok=True)
-
+    mvn_bin = mvn_custom / "bin"
+    mvn_exe = mvn_bin / ("mvn.cmd" if os_name == "windows" else "mvn")
     if mvn_exe.exists():
         return mvn_custom, mvn_exe
+    return None
+
+
+def download_maven_package(os_name: str) -> Optional[Tuple[Path, str]]:
+    """Download the Maven distribution archive for the current OS."""
 
     distro = _resolve_maven_distro(os_name)
     if distro is None:
@@ -816,20 +837,33 @@ def ensure_maven(java_version: str, os_name: str) -> Optional[Tuple[Path, Path]]
     url, ext = distro
     archive = TEMP_DIR / f"apache-maven-{DEFAULT_MAVEN_VERSION}-bin.{ext}"
     TEMP_DIR.mkdir(parents=True, exist_ok=True)
-    if not _download_maven_distribution(url, archive):
-        return None
+    if _download_maven_distribution(url, archive):
+        return archive, ext
+    return None
+
+
+def install_maven_from_archive(
+    java_version: str, os_name: str, archive: Path
+) -> Optional[Tuple[Path, Path]]:
+    """Extract Maven into the mvn-custom folder under the requested JDK version."""
+
+    jdk_base = _jdk_base(java_version)
+    jdk_base.mkdir(parents=True, exist_ok=True)
 
     extracted = _extract_maven_archive(archive)
     if extracted is None:
         return None
     extracted_root, extract_dir = extracted
 
+    mvn_custom = jdk_base / "mvn-custom"
     if mvn_custom.exists():
         shutil.rmtree(mvn_custom, ignore_errors=True)
     shutil.move(str(extracted_root), str(mvn_custom))
     shutil.rmtree(extract_dir, ignore_errors=True)
 
-    if os_name != "windows":
+    mvn_bin_dir = mvn_custom / "bin"
+    mvn_exe = mvn_bin_dir / ("mvn.cmd" if os_name == "windows" else "mvn")
+    if os_name != "windows" and mvn_exe.exists():
         try:
             mvn_exe.chmod(0o755)
         except Exception:
@@ -904,22 +938,58 @@ def process_project(project_dir: Path) -> None:
 
     ensure_dirs()
 
+    existing_jdk = locate_existing_jdk(java_version)
+    if existing_jdk:
+        log(f"[OK] JDK já presente: {existing_jdk}")
+
+    existing_maven = locate_existing_maven(java_version, os_name)
+    if existing_maven:
+        log(f"[OK] Maven já presente: {existing_maven[0]}")
+
+    future_jdk: Optional[Future[Optional[Tuple[Path, JdkDist]]]] = None
+    future_maven: Optional[Future[Optional[Tuple[Path, str]]]] = None
     with ThreadPoolExecutor(max_workers=2) as executor:
-        future_jdk = executor.submit(ensure_jdk, java_version, os_name, arch)
-        future_maven = executor.submit(ensure_maven, java_version, os_name)
+        if not existing_jdk:
+            future_jdk = executor.submit(download_jdk_package, java_version, os_name, arch)
+        if not existing_maven:
+            future_maven = executor.submit(download_maven_package, os_name)
 
-        jdk_home = future_jdk.result()
-        mvn = future_maven.result()
+    jdk_home: Optional[Path] = existing_jdk
+    jdk_download: Optional[Tuple[Path, JdkDist]] = None
+    if future_jdk is not None:
+        jdk_download = future_jdk.result()
+        if jdk_download is None:
+            log("[ERRO] Download do JDK falhou. Abortando para este projeto.")
+            return
 
-    if not jdk_home:
-        log("[ERRO] Instalação JDK falhou. Abortando para este projeto.")
+    if jdk_home is None and jdk_download is not None:
+        archive, dist = jdk_download
+        jdk_home = install_jdk_from_archive(java_version, archive, dist)
+        if not jdk_home:
+            log("[ERRO] Instalação JDK falhou. Abortando para este projeto.")
+            return
+
+    if jdk_home is None:
+        log("[ERRO] Não foi possível preparar o JDK requerido.")
         return
 
-    if not mvn:
-        log("[ERRO] Instalação do Maven falhou. Abortando para este projeto.")
-        return
-
-    maven_home, maven_bin = mvn
+    maven_home: Optional[Path]
+    maven_bin: Optional[Path]
+    if existing_maven:
+        maven_home, maven_bin = existing_maven
+    else:
+        maven_download: Optional[Tuple[Path, str]] = None
+        if future_maven is not None:
+            maven_download = future_maven.result()
+        if not maven_download:
+            log("[ERRO] Download do Maven falhou. Abortando para este projeto.")
+            return
+        archive, _ = maven_download
+        maven_result = install_maven_from_archive(java_version, os_name, archive)
+        if not maven_result:
+            log("[ERRO] Instalação do Maven falhou. Abortando para este projeto.")
+            return
+        maven_home, maven_bin = maven_result
 
     # Toolchains e settings: se o projeto precisar toolchains, ainda assim manter settings.xml
     try:
