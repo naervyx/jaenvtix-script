@@ -88,302 +88,206 @@ class JdkDist:
     ext: str  # 'zip' ou 'tar.gz'
 
 
+def oracle_latest_url(java_version: str, os_name: str, arch: str) -> Optional[Tuple[str, str]]:
+    """Return the Oracle "latest" artifact URL for the requested major/OS/arch."""
+
+    fragments: Dict[Tuple[str, str], Tuple[str, str]] = {
+        ("windows", "x86_64"): ("windows-x64", "zip"),
+        ("linux", "x86_64"): ("linux-x64", "tar.gz"),
+        ("linux", "aarch64"): ("linux-aarch64", "tar.gz"),
+        ("macos", "x86_64"): ("macos-x64", "tar.gz"),
+        ("macos", "aarch64"): ("macos-aarch64", "tar.gz"),
+    }
+    fragment = fragments.get((os_name, arch))
+    if not fragment:
+        return None
+    platform_fragment, ext = fragment
+    url = (
+        f"https://download.oracle.com/java/{java_version}/latest/"
+        f"jdk-{java_version}_{platform_fragment}_bin.{ext}"
+    )
+    return url, ext
+
+
+def oracle_latest_dist(java_version: str, os_name: str, arch: str) -> JdkDist:
+    """Build a :class:`JdkDist` preconfigured with the Oracle latest URL."""
+
+    result = oracle_latest_url(java_version, os_name, arch)
+    if result is None:
+        raise ValueError(f"No Oracle artifact mapping for {java_version} {os_name}/{arch}")
+    url, ext = result
+    return JdkDist(f"Oracle{java_version}", url, ext)
+
+
+def temurin_latest_url(java_version: str, os_name: str, arch: str) -> Optional[Tuple[str, str]]:
+    """Return the Temurin API endpoint that redirects to the latest GA build."""
+
+    os_fragment = {
+        "windows": "windows",
+        "linux": "linux",
+        "macos": "mac",
+    }.get(os_name)
+    arch_fragment = {
+        "x86_64": "x64",
+        "aarch64": "aarch64",
+    }.get(arch)
+    if not os_fragment or not arch_fragment:
+        return None
+    ext = "zip" if os_name == "windows" else "tar.gz"
+    url = (
+        "https://api.adoptium.net/v3/binary/latest/"
+        f"{java_version}/ga/{os_fragment}/{arch_fragment}/jdk/hotspot/normal/eclipse"
+    )
+    return url, ext
+
+
+def temurin_latest_dist(java_version: str, os_name: str, arch: str) -> JdkDist:
+    """Build a :class:`JdkDist` pointing to Adoptium's evergreen binary endpoint."""
+
+    result = temurin_latest_url(java_version, os_name, arch)
+    if result is None:
+        raise ValueError(f"No Temurin artifact mapping for {java_version} {os_name}/{arch}")
+    url, ext = result
+    return JdkDist(f"Temurin{java_version}", url, ext)
+
+
+def corretto_latest_url(java_version: str, os_name: str, arch: str) -> Optional[Tuple[str, str]]:
+    """Return the Amazon Corretto evergreen download URL for the requested combo."""
+
+    os_fragment = {
+        "windows": "windows",
+        "linux": "linux",
+        "macos": "macos",
+    }.get(os_name)
+    arch_fragment = {
+        "x86_64": "x64",
+        "aarch64": "aarch64",
+    }.get(arch)
+    if not os_fragment or not arch_fragment:
+        return None
+    ext = "zip" if os_name == "windows" else "tar.gz"
+    url = (
+        "https://corretto.aws/downloads/latest/"
+        f"amazon-corretto-{java_version}-{arch_fragment}-{os_fragment}-jdk.{ext}"
+    )
+    return url, ext
+
+
+def corretto_latest_dist(java_version: str, os_name: str, arch: str) -> JdkDist:
+    """Build a :class:`JdkDist` pointing to the Amazon Corretto evergreen endpoint."""
+
+    result = corretto_latest_url(java_version, os_name, arch)
+    if result is None:
+        raise ValueError(f"No Corretto artifact mapping for {java_version} {os_name}/{arch}")
+    url, ext = result
+    return JdkDist(f"Corretto{java_version}", url, ext)
+
+
 # Tabela: (java_version -> { (os, arch) -> [JdkDist, ...] })
 JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
     # Java 8
     "8": {
         ("windows", "x86_64"): [
-            JdkDist(
-                "Temurin8",
-                "https://github.com/adoptium/temurin8-binaries/releases/latest/download/OpenJDK8U-jdk_x64_windows_hotspot_8u422b05.zip",
-                "zip",
-            ),
+            temurin_latest_dist("8", "windows", "x86_64"),
+            corretto_latest_dist("8", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
-            JdkDist(
-                "Temurin8",
-                "https://github.com/adoptium/temurin8-binaries/releases/latest/download/OpenJDK8U-jdk_x64_linux_hotspot_8u422b05.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("8", "linux", "x86_64"),
+            corretto_latest_dist("8", "linux", "x86_64"),
+        ],
+        ("linux", "aarch64"): [
+            temurin_latest_dist("8", "linux", "aarch64"),
+            corretto_latest_dist("8", "linux", "aarch64"),
         ],
         ("macos", "x86_64"): [
-            JdkDist(
-                "Temurin8",
-                "https://github.com/adoptium/temurin8-binaries/releases/latest/download/OpenJDK8U-jdk_x64_mac_hotspot_8u422b05.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("8", "macos", "x86_64"),
+            corretto_latest_dist("8", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [
-            JdkDist(
-                "Zulu8",
-                "https://cdn.azul.com/zulu/bin/zulu8.82.0.21-ca-jdk8.0.432-macosx_aarch64.tar.gz",
-                "tar.gz",
-            )
+            temurin_latest_dist("8", "macos", "aarch64"),
+            corretto_latest_dist("8", "macos", "aarch64"),
         ],
     },
     # Java 11
     "11": {
         ("windows", "x86_64"): [
-            JdkDist(
-                "Oracle11",
-                "https://download.oracle.com/java/11/latest/jdk-11_windows-x64_bin.zip",
-                "zip",
-            ),
-            JdkDist(
-                "Temurin11",
-                "https://github.com/adoptium/temurin11-binaries/releases/latest/download/OpenJDK11U-jdk_x64_windows_hotspot.zip",
-                "zip",
-            ),
+            temurin_latest_dist("11", "windows", "x86_64"),
+            corretto_latest_dist("11", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
-            JdkDist(
-                "Oracle11",
-                "https://download.oracle.com/java/11/latest/jdk-11_linux-x64_bin.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Temurin11",
-                "https://github.com/adoptium/temurin11-binaries/releases/latest/download/OpenJDK11U-jdk_x64_linux_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("11", "linux", "x86_64"),
+            corretto_latest_dist("11", "linux", "x86_64"),
+        ],
+        ("linux", "aarch64"): [
+            temurin_latest_dist("11", "linux", "aarch64"),
+            corretto_latest_dist("11", "linux", "aarch64"),
         ],
         ("macos", "x86_64"): [
-            JdkDist(
-                "Oracle11",
-                "https://download.oracle.com/java/11/latest/jdk-11_macos-x64_bin.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Temurin11",
-                "https://github.com/adoptium/temurin11-binaries/releases/latest/download/OpenJDK11U-jdk_x64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("11", "macos", "x86_64"),
+            corretto_latest_dist("11", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [
-            JdkDist(
-                "Temurin11",
-                "https://github.com/adoptium/temurin11-binaries/releases/latest/download/OpenJDK11U-jdk_aarch64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("11", "macos", "aarch64"),
+            corretto_latest_dist("11", "macos", "aarch64"),
         ],
     },
     # Java 17
     "17": {
         ("windows", "x86_64"): [
-            JdkDist(
-                "Oracle17",
-                "https://download.oracle.com/java/17/latest/jdk-17_windows-x64_bin.zip",
-                "zip",
-            ),
-            JdkDist(
-                "Temurin17",
-                "https://github.com/adoptium/temurin17-binaries/releases/latest/download/OpenJDK17U-jdk_x64_windows_hotspot.zip",
-                "zip",
-            ),
+            temurin_latest_dist("17", "windows", "x86_64"),
+            corretto_latest_dist("17", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
-            JdkDist(
-                "Oracle17",
-                "https://download.oracle.com/java/17/latest/jdk-17_linux-x64_bin.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Temurin17",
-                "https://github.com/adoptium/temurin17-binaries/releases/latest/download/OpenJDK17U-jdk_x64_linux_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("17", "linux", "x86_64"),
+            corretto_latest_dist("17", "linux", "x86_64"),
         ],
         ("linux", "aarch64"): [
-            JdkDist(
-                "Oracle17",
-                "https://download.oracle.com/java/17/latest/jdk-17_linux-aarch64_bin.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Temurin17",
-                "https://github.com/adoptium/temurin17-binaries/releases/latest/download/OpenJDK17U-jdk_aarch64_linux_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("17", "linux", "aarch64"),
+            corretto_latest_dist("17", "linux", "aarch64"),
         ],
         ("macos", "x86_64"): [
-            JdkDist(
-                "Oracle17",
-                "https://download.oracle.com/java/17/latest/jdk-17_macos-x64_bin.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Temurin17",
-                "https://github.com/adoptium/temurin17-binaries/releases/latest/download/OpenJDK17U-jdk_x64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("17", "macos", "x86_64"),
+            corretto_latest_dist("17", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [
-            JdkDist(
-                "Oracle17",
-                "https://download.oracle.com/java/17/latest/jdk-17_macos-aarch64_bin.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Temurin17",
-                "https://github.com/adoptium/temurin17-binaries/releases/latest/download/OpenJDK17U-jdk_aarch64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("17", "macos", "aarch64"),
+            corretto_latest_dist("17", "macos", "aarch64"),
         ],
     },
     # Java 21
     "21": {
         ("windows", "x86_64"): [
-            JdkDist(
-                "Oracle21",
-                "https://download.oracle.com/java/21/latest/jdk-21_windows-x64_bin.zip",
-                "zip",
-            ),
-            JdkDist(
-                "Temurin21",
-                "https://github.com/adoptium/temurin21-binaries/releases/latest/download/OpenJDK21U-jdk_x64_windows_hotspot.zip",
-                "zip",
-            ),
+            oracle_latest_dist("21", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
-            JdkDist(
-                "Oracle21",
-                "https://download.oracle.com/java/21/latest/jdk-21_linux-x64_bin.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Corretto21",
-                "https://corretto.aws/downloads/latest/amazon-corretto-21-x64-linux-jdk.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Temurin21",
-                "https://github.com/adoptium/temurin21-binaries/releases/latest/download/OpenJDK21U-jdk_x64_linux_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            oracle_latest_dist("21", "linux", "x86_64"),
         ],
         ("linux", "aarch64"): [
-            JdkDist(
-                "Oracle21",
-                "https://download.oracle.com/java/21/latest/jdk-21_linux-aarch64_bin.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Corretto21",
-                "https://corretto.aws/downloads/latest/amazon-corretto-21-aarch64-linux-jdk.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Temurin21",
-                "https://github.com/adoptium/temurin21-binaries/releases/latest/download/OpenJDK21U-jdk_aarch64_linux_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            oracle_latest_dist("21", "linux", "aarch64"),
         ],
         ("macos", "x86_64"): [
-            JdkDist(
-                "Oracle21",
-                "https://download.oracle.com/java/21/latest/jdk-21_macos-x64_bin.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Temurin21",
-                "https://github.com/adoptium/temurin21-binaries/releases/latest/download/OpenJDK21U-jdk_x64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            oracle_latest_dist("21", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [
-            JdkDist(
-                "Oracle21",
-                "https://download.oracle.com/java/21/latest/jdk-21_macos-aarch64_bin.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Temurin21",
-                "https://github.com/adoptium/temurin21-binaries/releases/latest/download/OpenJDK21U-jdk_aarch64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            oracle_latest_dist("21", "macos", "aarch64"),
         ],
     },
     # Java 25 LTS
     "25": {
         ("windows", "x86_64"): [
-            JdkDist(
-                "Oracle25",
-                "https://download.oracle.com/java/25/latest/jdk-25_windows-x64_bin.zip",
-                "zip",
-            ),
-            JdkDist(
-                "Corretto25",
-                "https://corretto.aws/downloads/latest/amazon-corretto-25-x64-windows-jdk.zip",
-                "zip",
-            ),
-            JdkDist(
-                "Temurin25",
-                "https://github.com/adoptium/temurin25-binaries/releases/latest/download/OpenJDK25U-jdk_x64_windows_hotspot.zip",
-                "zip",
-            ),
+            oracle_latest_dist("25", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
-            JdkDist(
-                "Oracle25",
-                "https://download.oracle.com/java/25/latest/jdk-25_linux-x64_bin.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Corretto25",
-                "https://corretto.aws/downloads/latest/amazon-corretto-25-x64-linux-jdk.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Temurin25",
-                "https://github.com/adoptium/temurin25-binaries/releases/latest/download/OpenJDK25U-jdk_x64_linux_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            oracle_latest_dist("25", "linux", "x86_64"),
         ],
         ("linux", "aarch64"): [
-            JdkDist(
-                "Oracle25",
-                "https://download.oracle.com/java/25/latest/jdk-25_linux-aarch64_bin.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Corretto25",
-                "https://corretto.aws/downloads/latest/amazon-corretto-25-aarch64-linux-jdk.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Temurin25",
-                "https://github.com/adoptium/temurin25-binaries/releases/latest/download/OpenJDK25U-jdk_aarch64_linux_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            oracle_latest_dist("25", "linux", "aarch64"),
         ],
         ("macos", "x86_64"): [
-            JdkDist(
-                "Oracle25",
-                "https://download.oracle.com/java/25/latest/jdk-25_macos-x64_bin.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Temurin25",
-                "https://github.com/adoptium/temurin25-binaries/releases/latest/download/OpenJDK25U-jdk_x64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            oracle_latest_dist("25", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [
-            JdkDist(
-                "Oracle25",
-                "https://download.oracle.com/java/25/latest/jdk-25_macos-aarch64_bin.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Corretto25",
-                "https://corretto.aws/downloads/latest/amazon-corretto-25-aarch64-macos-jdk.tar.gz",
-                "tar.gz",
-            ),
-            JdkDist(
-                "Temurin25",
-                "https://github.com/adoptium/temurin25-binaries/releases/latest/download/OpenJDK25U-jdk_aarch64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            oracle_latest_dist("25", "macos", "aarch64"),
         ],
     },
 }
@@ -404,10 +308,14 @@ MAVEN_URLS: Dict[str, Dict[str, str]] = {
 # ==========================
 
 def log(msg: str) -> None:
+    """Print messages and force an immediate flush to stdout."""
+
     print(msg, flush=True)
 
 
 def detect_os_arch() -> Tuple[str, str]:
+    """Detect and normalize the current operating system and architecture."""
+
     sys_os = platform.system().lower()
     if sys_os.startswith("win"):
         os_name = "windows"
@@ -432,6 +340,8 @@ def detect_os_arch() -> Tuple[str, str]:
 
 
 def ensure_dirs() -> None:
+    """Create the ~/.jaenvtix directory structure required for downloads."""
+
     # 4) Estrutura de diretórios
     try:
         (JAENVTIX_HOME).mkdir(parents=True, exist_ok=True)
@@ -446,6 +356,8 @@ def ensure_dirs() -> None:
 
 
 def find_projects_with_pom(root: Path) -> List[Path]:
+    """Return root and first-level directories that contain a pom.xml."""
+
     # 1) Presença de pom.xml: varre pastas raiz do workspace atual
     projects: List[Path] = []
     # verificar raiz
@@ -465,6 +377,8 @@ def find_projects_with_pom(root: Path) -> List[Path]:
 # ==========================
 
 def ns_cleanup(tag: str) -> str:
+    """Strip the ``{namespace}`` prefix used by ElementTree."""
+
     # remove namespace {..}tag
     if tag.startswith("{"):
         return tag.split("}", 1)[1]
@@ -472,6 +386,8 @@ def ns_cleanup(tag: str) -> str:
 
 
 def find_first_text(elem: Optional[ET.Element], path_parts: List[str]) -> Optional[str]:
+    """Traverse a simple path ignoring namespaces and return the found text."""
+
     # Busca descendente por caminho simples, ignorando namespaces
     if elem is None:
         return None
@@ -489,6 +405,8 @@ def find_first_text(elem: Optional[ET.Element], path_parts: List[str]) -> Option
 
 
 def parse_java_version_from_pom(pom_path: Path) -> Optional[str]:
+    """Extract the target Java version from a pom.xml using common heuristics."""
+
     try:
         tree = ET.parse(str(pom_path))
         root = tree.getroot()
@@ -524,6 +442,8 @@ def parse_java_version_from_pom(pom_path: Path) -> Optional[str]:
 
 
 def find_from_maven_compiler(root: ET.Element, conf_path: List[str]) -> Optional[str]:
+    """Look up compiler configuration values inside the maven-compiler-plugin."""
+
     # Procura plugin maven-compiler-plugin
     for build in root:
         if ns_cleanup(build.tag) != "build":
@@ -541,6 +461,8 @@ def find_from_maven_compiler(root: ET.Element, conf_path: List[str]) -> Optional
 
 
 def find_in_toolchain_version(root: ET.Element) -> Optional[str]:
+    """Search toolchain configurations for declared Java versions."""
+
     # Busca aproximação por jdkToolchain/version
     # Alguns plugins (maven-toolchains-plugin) podem declarar dentro de build/plugins
     for build in root:
@@ -571,6 +493,8 @@ def find_in_toolchain_version(root: ET.Element) -> Optional[str]:
 
 
 def normalize_java_version(v: str) -> Optional[str]:
+    """Normalize values such as ``1.8`` or ``17.0.9`` to their major version."""
+
     v = v.strip()
     # Mapear 1.8 -> 8
     if v.startswith("1."):
@@ -589,6 +513,8 @@ def normalize_java_version(v: str) -> Optional[str]:
 # ==========================
 
 def download_with_retries(url: str, dest: Path, attempts: int = 3, backoff: float = 1.5) -> bool:
+    """Download a URL with retry attempts and exponential backoff."""
+
     import urllib.request
     last_err: Optional[Exception] = None
     for i in range(1, attempts + 1):
@@ -608,6 +534,8 @@ def download_with_retries(url: str, dest: Path, attempts: int = 3, backoff: floa
 
 
 def extract_archive(archive_path: Path, dest_dir: Path) -> bool:
+    """Extract ``.zip`` or ``.tar.gz`` archives to the destination folder."""
+
     try:
         if archive_path.suffix == ".zip":
             with zipfile.ZipFile(archive_path, 'r') as z:
@@ -630,10 +558,14 @@ def extract_archive(archive_path: Path, dest_dir: Path) -> bool:
 # ==========================
 
 def ensure_m2_dirs():
+    """Ensure the ~/.m2 directory exists."""
+
     M2_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def merge_toolchains(java_version: str, java_home: Path) -> None:
+    """Create or merge toolchains.xml with the requested Java version entry."""
+
     ensure_m2_dirs()
     toolchains = M2_DIR / "toolchains.xml"
     template = (
@@ -704,6 +636,8 @@ def merge_toolchains(java_version: str, java_home: Path) -> None:
 
 
 def ensure_settings_xml() -> None:
+    """Create a default settings.xml when it is missing from ~/.m2."""
+
     ensure_m2_dirs()
     settings = M2_DIR / "settings.xml"
     if not settings.exists():
@@ -728,6 +662,8 @@ def ensure_settings_xml() -> None:
 # ==========================
 
 def update_vscode_settings(project_dir: Path, java_home: Path, maven_bin: Path) -> None:
+    """Update .vscode/settings.json with java.home and maven.executable.path."""
+
     vscode_dir = project_dir / ".vscode"
     vscode_dir.mkdir(parents=True, exist_ok=True)
     settings_file = vscode_dir / "settings.json"
@@ -750,6 +686,8 @@ def update_vscode_settings(project_dir: Path, java_home: Path, maven_bin: Path) 
 # ==========================
 
 def select_jdk_dist(java_version: str, os_name: str, arch: str) -> List[JdkDist]:
+    """Build the ordered list of JDK distributions to try for the given combo."""
+
     # Lista de candidatos: tabela estática + geração dinâmica para versões não mapeadas
     candidates: List[JdkDist] = []
     static_list = JDK_URLS.get(java_version, {}).get((os_name, arch))
@@ -758,52 +696,22 @@ def select_jdk_dist(java_version: str, os_name: str, arch: str) -> List[JdkDist]
 
     # Se não há estático suficiente, gerar candidatos dinamicamente
     if not candidates:
-        # 1) Oracle LTS/non-LTS padrão "latest"
-        oracle_arch = None
-        if os_name == "windows" and arch == "x86_64":
-            oracle_arch = "windows-x64"
-        elif os_name == "linux" and arch in ("x86_64", "aarch64"):
-            oracle_arch = f"linux-{'x64' if arch=='x86_64' else 'aarch64'}"
-        elif os_name == "macos" and arch in ("x86_64", "aarch64"):
-            oracle_arch = f"macos-{'x64' if arch=='x86_64' else 'aarch64'}"
-        # Windows ARM não suportado pela Oracle (padrão) na maioria das versões
-        if oracle_arch:
-            ext = "zip" if os_name == "windows" else "tar.gz"
-            candidates.append(JdkDist(
-                f"Oracle{java_version}",
-                f"https://download.oracle.com/java/{java_version}/latest/jdk-{java_version}_{oracle_arch}_bin.{ext}",
-                ext,
-            ))
-        # 2) Temurin
-        temurin_tag = None
-        if os_name == "windows" and arch == "x86_64":
-            temurin_tag = "x64_windows"
-        elif os_name == "linux" and arch in ("x86_64", "aarch64"):
-            temurin_tag = ("x64_linux" if arch == "x86_64" else "aarch64_linux")
-        elif os_name == "macos" and arch in ("x86_64", "aarch64"):
-            temurin_tag = ("x64_mac" if arch == "x86_64" else "aarch64_mac")
-        if temurin_tag:
-            ext = "zip" if os_name == "windows" else "tar.gz"
-            candidates.append(JdkDist(
-                f"Temurin{java_version}",
-                f"https://github.com/adoptium/temurin{java_version}-binaries/releases/latest/download/OpenJDK{java_version}U-jdk_{temurin_tag}_hotspot.{ext}",
-                ext,
-            ))
-        # 3) Amazon Corretto
-        corretto_arch = None
-        if arch in ("x86_64", "aarch64"):
-            corretto_arch = ("x64" if arch == "x86_64" else "aarch64")
-        if os_name in ("windows", "linux", "macos") and corretto_arch:
-            ext = "zip" if os_name == "windows" else "tar.gz"
-            candidates.append(JdkDist(
-                f"Corretto{java_version}",
-                f"https://corretto.aws/downloads/latest/amazon-corretto-{java_version}-{corretto_arch}-{os_name}-jdk.{ext}",
-                ext,
-            ))
+        if java_version not in {"8", "11", "17"}:
+            try:
+                candidates.append(oracle_latest_dist(java_version, os_name, arch))
+            except ValueError:
+                pass
+        for factory in (temurin_latest_dist, corretto_latest_dist):
+            try:
+                candidates.append(factory(java_version, os_name, arch))
+            except ValueError:
+                continue
     return candidates
 
 
 def ensure_jdk(java_version: str, os_name: str, arch: str) -> Optional[Path]:
+    """Install the requested JDK if needed and return the resulting JAVA_HOME."""
+
     jdk_base = JAENVTIX_HOME / f"jdk-{java_version}"
     jdk_base.mkdir(parents=True, exist_ok=True)
 
@@ -869,6 +777,8 @@ def ensure_jdk(java_version: str, os_name: str, arch: str) -> Optional[Path]:
 
 
 def ensure_maven(java_version: str, os_name: str) -> Optional[Tuple[Path, Path]]:
+    """Install a Maven distribution tied to the selected JDK and return paths."""
+
     # Retorna (maven_home, maven_bin)
     jdk_base = JAENVTIX_HOME / f"jdk-{java_version}"
     mvn_custom = jdk_base / "mvn-custom"
@@ -940,6 +850,8 @@ def ensure_maven(java_version: str, os_name: str) -> Optional[Tuple[Path, Path]]
 # ==========================
 
 def process_project(project_dir: Path) -> None:
+    """Run the full bootstrap flow for a single Maven project."""
+
     pom = project_dir / "pom.xml"
     if not pom.exists():
         log(f"[SKIP] Sem pom.xml em {project_dir}; nada a fazer.")
@@ -991,6 +903,8 @@ def process_project(project_dir: Path) -> None:
 
 
 def cleanup_temp() -> None:
+    """Remove leftover files from ~/.jaenvtix/temp and report failures."""
+
     # 10) Limpeza da pasta temporária
     leftovers: List[Path] = []
     try:
@@ -1014,6 +928,8 @@ def cleanup_temp() -> None:
 
 
 def main() -> None:
+    """Discover Maven projects under the current workspace and bootstrap them."""
+
     # Determinar diretório raiz do workspace a partir do CWD
     root = Path.cwd()
     log(f"[START] Jaenvtix Setup no workspace: {root}")
