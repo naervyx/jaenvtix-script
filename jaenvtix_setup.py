@@ -119,38 +119,46 @@ def oracle_latest_dist(java_version: str, os_name: str, arch: str) -> JdkDist:
     return JdkDist(f"Oracle{java_version}", url, ext)
 
 
+def temurin_latest_url(java_version: str, os_name: str, arch: str) -> Optional[Tuple[str, str]]:
+    """Return the Temurin API endpoint that redirects to the latest GA build."""
+
+    os_fragment = {
+        "windows": "windows",
+        "linux": "linux",
+        "macos": "mac",
+    }.get(os_name)
+    arch_fragment = {
+        "x86_64": "x64",
+        "aarch64": "aarch64",
+    }.get(arch)
+    if not os_fragment or not arch_fragment:
+        return None
+    ext = "zip" if os_name == "windows" else "tar.gz"
+    url = (
+        "https://api.adoptium.net/v3/binary/latest/"
+        f"{java_version}/ga/{os_fragment}/{arch_fragment}/jdk/hotspot/normal/eclipse"
+    )
+    return url, ext
+
+
+def temurin_latest_dist(java_version: str, os_name: str, arch: str) -> JdkDist:
+    """Build a :class:`JdkDist` pointing to Adoptium's evergreen binary endpoint."""
+
+    result = temurin_latest_url(java_version, os_name, arch)
+    if result is None:
+        raise ValueError(f"No Temurin artifact mapping for {java_version} {os_name}/{arch}")
+    url, ext = result
+    return JdkDist(f"Temurin{java_version}", url, ext)
+
+
 # Tabela: (java_version -> { (os, arch) -> [JdkDist, ...] })
 JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
     # Java 8
     "8": {
-        ("windows", "x86_64"): [
-            JdkDist(
-                "Temurin8",
-                "https://github.com/adoptium/temurin8-binaries/releases/latest/download/OpenJDK8U-jdk_x64_windows_hotspot_8u422b05.zip",
-                "zip",
-            ),
-        ],
-        ("linux", "x86_64"): [
-            JdkDist(
-                "Temurin8",
-                "https://github.com/adoptium/temurin8-binaries/releases/latest/download/OpenJDK8U-jdk_x64_linux_hotspot_8u422b05.tar.gz",
-                "tar.gz",
-            ),
-        ],
-        ("macos", "x86_64"): [
-            JdkDist(
-                "Temurin8",
-                "https://github.com/adoptium/temurin8-binaries/releases/latest/download/OpenJDK8U-jdk_x64_mac_hotspot_8u422b05.tar.gz",
-                "tar.gz",
-            ),
-        ],
-        ("macos", "aarch64"): [
-            JdkDist(
-                "Zulu8",
-                "https://cdn.azul.com/zulu/bin/zulu8.82.0.21-ca-jdk8.0.432-macosx_aarch64.tar.gz",
-                "tar.gz",
-            )
-        ],
+        ("windows", "x86_64"): [temurin_latest_dist("8", "windows", "x86_64")],
+        ("linux", "x86_64"): [temurin_latest_dist("8", "linux", "x86_64")],
+        ("macos", "x86_64"): [temurin_latest_dist("8", "macos", "x86_64")],
+        ("macos", "aarch64"): [temurin_latest_dist("8", "macos", "aarch64")],
     },
     # Java 11
     "11": {
@@ -160,11 +168,7 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/11/latest/jdk-11_windows-x64_bin.zip",
                 "zip",
             ),
-            JdkDist(
-                "Temurin11",
-                "https://github.com/adoptium/temurin11-binaries/releases/latest/download/OpenJDK11U-jdk_x64_windows_hotspot.zip",
-                "zip",
-            ),
+            temurin_latest_dist("11", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
             JdkDist(
@@ -172,11 +176,7 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/11/latest/jdk-11_linux-x64_bin.tar.gz",
                 "tar.gz",
             ),
-            JdkDist(
-                "Temurin11",
-                "https://github.com/adoptium/temurin11-binaries/releases/latest/download/OpenJDK11U-jdk_x64_linux_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("11", "linux", "x86_64"),
         ],
         ("macos", "x86_64"): [
             JdkDist(
@@ -184,19 +184,9 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/11/latest/jdk-11_macos-x64_bin.tar.gz",
                 "tar.gz",
             ),
-            JdkDist(
-                "Temurin11",
-                "https://github.com/adoptium/temurin11-binaries/releases/latest/download/OpenJDK11U-jdk_x64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("11", "macos", "x86_64"),
         ],
-        ("macos", "aarch64"): [
-            JdkDist(
-                "Temurin11",
-                "https://github.com/adoptium/temurin11-binaries/releases/latest/download/OpenJDK11U-jdk_aarch64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
-        ],
+        ("macos", "aarch64"): [temurin_latest_dist("11", "macos", "aarch64")],
     },
     # Java 17
     "17": {
@@ -206,11 +196,7 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/17/latest/jdk-17_windows-x64_bin.zip",
                 "zip",
             ),
-            JdkDist(
-                "Temurin17",
-                "https://github.com/adoptium/temurin17-binaries/releases/latest/download/OpenJDK17U-jdk_x64_windows_hotspot.zip",
-                "zip",
-            ),
+            temurin_latest_dist("17", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
             JdkDist(
@@ -218,11 +204,7 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/17/latest/jdk-17_linux-x64_bin.tar.gz",
                 "tar.gz",
             ),
-            JdkDist(
-                "Temurin17",
-                "https://github.com/adoptium/temurin17-binaries/releases/latest/download/OpenJDK17U-jdk_x64_linux_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("17", "linux", "x86_64"),
         ],
         ("linux", "aarch64"): [
             JdkDist(
@@ -230,11 +212,7 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/17/latest/jdk-17_linux-aarch64_bin.tar.gz",
                 "tar.gz",
             ),
-            JdkDist(
-                "Temurin17",
-                "https://github.com/adoptium/temurin17-binaries/releases/latest/download/OpenJDK17U-jdk_aarch64_linux_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("17", "linux", "aarch64"),
         ],
         ("macos", "x86_64"): [
             JdkDist(
@@ -242,11 +220,7 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/17/latest/jdk-17_macos-x64_bin.tar.gz",
                 "tar.gz",
             ),
-            JdkDist(
-                "Temurin17",
-                "https://github.com/adoptium/temurin17-binaries/releases/latest/download/OpenJDK17U-jdk_x64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("17", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [
             JdkDist(
@@ -254,22 +228,14 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/17/latest/jdk-17_macos-aarch64_bin.tar.gz",
                 "tar.gz",
             ),
-            JdkDist(
-                "Temurin17",
-                "https://github.com/adoptium/temurin17-binaries/releases/latest/download/OpenJDK17U-jdk_aarch64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("17", "macos", "aarch64"),
         ],
     },
     # Java 21
     "21": {
         ("windows", "x86_64"): [
             oracle_latest_dist("21", "windows", "x86_64"),
-            JdkDist(
-                "Temurin21",
-                "https://github.com/adoptium/temurin21-binaries/releases/latest/download/OpenJDK21U-jdk_x64_windows_hotspot.zip",
-                "zip",
-            ),
+            temurin_latest_dist("21", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
             oracle_latest_dist("21", "linux", "x86_64"),
@@ -278,11 +244,7 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://corretto.aws/downloads/latest/amazon-corretto-21-x64-linux-jdk.tar.gz",
                 "tar.gz",
             ),
-            JdkDist(
-                "Temurin21",
-                "https://github.com/adoptium/temurin21-binaries/releases/latest/download/OpenJDK21U-jdk_x64_linux_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("21", "linux", "x86_64"),
         ],
         ("linux", "aarch64"): [
             oracle_latest_dist("21", "linux", "aarch64"),
@@ -291,27 +253,15 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://corretto.aws/downloads/latest/amazon-corretto-21-aarch64-linux-jdk.tar.gz",
                 "tar.gz",
             ),
-            JdkDist(
-                "Temurin21",
-                "https://github.com/adoptium/temurin21-binaries/releases/latest/download/OpenJDK21U-jdk_aarch64_linux_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("21", "linux", "aarch64"),
         ],
         ("macos", "x86_64"): [
             oracle_latest_dist("21", "macos", "x86_64"),
-            JdkDist(
-                "Temurin21",
-                "https://github.com/adoptium/temurin21-binaries/releases/latest/download/OpenJDK21U-jdk_x64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("21", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [
             oracle_latest_dist("21", "macos", "aarch64"),
-            JdkDist(
-                "Temurin21",
-                "https://github.com/adoptium/temurin21-binaries/releases/latest/download/OpenJDK21U-jdk_aarch64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("21", "macos", "aarch64"),
         ],
     },
     # Java 25 LTS
@@ -323,11 +273,7 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://corretto.aws/downloads/latest/amazon-corretto-25-x64-windows-jdk.zip",
                 "zip",
             ),
-            JdkDist(
-                "Temurin25",
-                "https://github.com/adoptium/temurin25-binaries/releases/latest/download/OpenJDK25U-jdk_x64_windows_hotspot.zip",
-                "zip",
-            ),
+            temurin_latest_dist("25", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
             oracle_latest_dist("25", "linux", "x86_64"),
@@ -336,11 +282,7 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://corretto.aws/downloads/latest/amazon-corretto-25-x64-linux-jdk.tar.gz",
                 "tar.gz",
             ),
-            JdkDist(
-                "Temurin25",
-                "https://github.com/adoptium/temurin25-binaries/releases/latest/download/OpenJDK25U-jdk_x64_linux_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("25", "linux", "x86_64"),
         ],
         ("linux", "aarch64"): [
             oracle_latest_dist("25", "linux", "aarch64"),
@@ -349,19 +291,11 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://corretto.aws/downloads/latest/amazon-corretto-25-aarch64-linux-jdk.tar.gz",
                 "tar.gz",
             ),
-            JdkDist(
-                "Temurin25",
-                "https://github.com/adoptium/temurin25-binaries/releases/latest/download/OpenJDK25U-jdk_aarch64_linux_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("25", "linux", "aarch64"),
         ],
         ("macos", "x86_64"): [
             oracle_latest_dist("25", "macos", "x86_64"),
-            JdkDist(
-                "Temurin25",
-                "https://github.com/adoptium/temurin25-binaries/releases/latest/download/OpenJDK25U-jdk_x64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("25", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [
             oracle_latest_dist("25", "macos", "aarch64"),
@@ -370,11 +304,7 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://corretto.aws/downloads/latest/amazon-corretto-25-aarch64-macos-jdk.tar.gz",
                 "tar.gz",
             ),
-            JdkDist(
-                "Temurin25",
-                "https://github.com/adoptium/temurin25-binaries/releases/latest/download/OpenJDK25U-jdk_aarch64_mac_hotspot.tar.gz",
-                "tar.gz",
-            ),
+            temurin_latest_dist("25", "macos", "aarch64"),
         ],
     },
 }

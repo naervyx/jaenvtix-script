@@ -43,8 +43,9 @@ downloaded because the previous attempt failed.
 Oracle JDK 21 and 25 entries use the official "latest" download URLs published
 at [oracle.com/java/technologies/downloads/#jdk21](https://www.oracle.com/java/technologies/downloads/#jdk21)
 and [oracle.com/java/technologies/downloads/#jdk25](https://www.oracle.com/java/technologies/downloads/#jdk25).
-Fallback distributions for Temurin and Amazon Corretto rely on their respective
-"latest" release endpoints.
+Fallback distributions for Temurin use the Adoptium evergreen binary API
+(`https://api.adoptium.net/v3/binary/latest/...`). Amazon Corretto entries rely
+on the official `https://corretto.aws/downloads/latest/` paths.
 
 ## Customisation tips
 
