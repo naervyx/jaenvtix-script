@@ -168,7 +168,6 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/11/latest/jdk-11_windows-x64_bin.zip",
                 "zip",
             ),
-            temurin_latest_dist("11", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
             JdkDist(
@@ -176,7 +175,6 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/11/latest/jdk-11_linux-x64_bin.tar.gz",
                 "tar.gz",
             ),
-            temurin_latest_dist("11", "linux", "x86_64"),
         ],
         ("macos", "x86_64"): [
             JdkDist(
@@ -184,7 +182,6 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/11/latest/jdk-11_macos-x64_bin.tar.gz",
                 "tar.gz",
             ),
-            temurin_latest_dist("11", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [temurin_latest_dist("11", "macos", "aarch64")],
     },
@@ -196,7 +193,6 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/17/latest/jdk-17_windows-x64_bin.zip",
                 "zip",
             ),
-            temurin_latest_dist("17", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
             JdkDist(
@@ -204,7 +200,6 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/17/latest/jdk-17_linux-x64_bin.tar.gz",
                 "tar.gz",
             ),
-            temurin_latest_dist("17", "linux", "x86_64"),
         ],
         ("linux", "aarch64"): [
             JdkDist(
@@ -212,7 +207,6 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/17/latest/jdk-17_linux-aarch64_bin.tar.gz",
                 "tar.gz",
             ),
-            temurin_latest_dist("17", "linux", "aarch64"),
         ],
         ("macos", "x86_64"): [
             JdkDist(
@@ -220,7 +214,6 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/17/latest/jdk-17_macos-x64_bin.tar.gz",
                 "tar.gz",
             ),
-            temurin_latest_dist("17", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [
             JdkDist(
@@ -228,83 +221,42 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
                 "https://download.oracle.com/java/17/latest/jdk-17_macos-aarch64_bin.tar.gz",
                 "tar.gz",
             ),
-            temurin_latest_dist("17", "macos", "aarch64"),
         ],
     },
     # Java 21
     "21": {
         ("windows", "x86_64"): [
             oracle_latest_dist("21", "windows", "x86_64"),
-            temurin_latest_dist("21", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
             oracle_latest_dist("21", "linux", "x86_64"),
-            JdkDist(
-                "Corretto21",
-                "https://corretto.aws/downloads/latest/amazon-corretto-21-x64-linux-jdk.tar.gz",
-                "tar.gz",
-            ),
-            temurin_latest_dist("21", "linux", "x86_64"),
         ],
         ("linux", "aarch64"): [
             oracle_latest_dist("21", "linux", "aarch64"),
-            JdkDist(
-                "Corretto21",
-                "https://corretto.aws/downloads/latest/amazon-corretto-21-aarch64-linux-jdk.tar.gz",
-                "tar.gz",
-            ),
-            temurin_latest_dist("21", "linux", "aarch64"),
         ],
         ("macos", "x86_64"): [
             oracle_latest_dist("21", "macos", "x86_64"),
-            temurin_latest_dist("21", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [
             oracle_latest_dist("21", "macos", "aarch64"),
-            temurin_latest_dist("21", "macos", "aarch64"),
         ],
     },
     # Java 25 LTS
     "25": {
         ("windows", "x86_64"): [
             oracle_latest_dist("25", "windows", "x86_64"),
-            JdkDist(
-                "Corretto25",
-                "https://corretto.aws/downloads/latest/amazon-corretto-25-x64-windows-jdk.zip",
-                "zip",
-            ),
-            temurin_latest_dist("25", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
             oracle_latest_dist("25", "linux", "x86_64"),
-            JdkDist(
-                "Corretto25",
-                "https://corretto.aws/downloads/latest/amazon-corretto-25-x64-linux-jdk.tar.gz",
-                "tar.gz",
-            ),
-            temurin_latest_dist("25", "linux", "x86_64"),
         ],
         ("linux", "aarch64"): [
             oracle_latest_dist("25", "linux", "aarch64"),
-            JdkDist(
-                "Corretto25",
-                "https://corretto.aws/downloads/latest/amazon-corretto-25-aarch64-linux-jdk.tar.gz",
-                "tar.gz",
-            ),
-            temurin_latest_dist("25", "linux", "aarch64"),
         ],
         ("macos", "x86_64"): [
             oracle_latest_dist("25", "macos", "x86_64"),
-            temurin_latest_dist("25", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [
             oracle_latest_dist("25", "macos", "aarch64"),
-            JdkDist(
-                "Corretto25",
-                "https://corretto.aws/downloads/latest/amazon-corretto-25-aarch64-macos-jdk.tar.gz",
-                "tar.gz",
-            ),
-            temurin_latest_dist("25", "macos", "aarch64"),
         ],
     },
 }

@@ -11,8 +11,8 @@ them into user-level tooling such as `~/.m2` and VS Code settings.
 - Parses common `pom.xml` hints (`java.version`, `maven-compiler-plugin`,
   toolchains) to infer the required Java major version.
 - Maps the host operating system/architecture to curated download URLs for
-  Oracle, Temurin, and Amazon Corretto JDK distributions (including Oracle JDK
-  21 and 25 "latest" endpoints).
+  Oracle and Temurin JDK distributions (including Oracle JDK 21 and 25 "latest"
+  endpoints).
 - Installs Maven `3.9.9` inside a version-specific `~/.jaenvtix/jdk-<major>`
   folder, keeping the runtime self-contained per JDK.
 - Creates or updates `~/.m2/toolchains.xml`, `~/.m2/settings.xml`, and
@@ -44,8 +44,7 @@ Oracle JDK 21 and 25 entries use the official "latest" download URLs published
 at [oracle.com/java/technologies/downloads/#jdk21](https://www.oracle.com/java/technologies/downloads/#jdk21)
 and [oracle.com/java/technologies/downloads/#jdk25](https://www.oracle.com/java/technologies/downloads/#jdk25).
 Fallback distributions for Temurin use the Adoptium evergreen binary API
-(`https://api.adoptium.net/v3/binary/latest/...`). Amazon Corretto entries rely
-on the official `https://corretto.aws/downloads/latest/` paths.
+(`https://api.adoptium.net/v3/binary/latest/...`).
 
 ## Customisation tips
 
