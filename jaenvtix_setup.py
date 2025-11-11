@@ -56,7 +56,7 @@ import zipfile
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 try:
     # xml.etree is sufficient here and avoids extra deps
@@ -815,6 +815,46 @@ def install_jdk_from_archive(java_version: str, archive: Path, dist: JdkDist) ->
     return None
 
 
+def install_jdk_with_fallback(
+    java_version: str,
+    os_name: str,
+    arch: str,
+    skip: Optional[Set[JdkDist]] = None,
+) -> Optional[Path]:
+    """Try installing the JDK from alternative distributions when the primary fails."""
+
+    candidates = select_jdk_dist(java_version, os_name, arch)
+    skip_set: Set[JdkDist] = skip or set()
+    remaining = [dist for dist in candidates if dist not in skip_set]
+    if not remaining:
+        log("[ERRO] Nenhum distribuidor adicional de JDK disponível para fallback.")
+        return None
+
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
+    last_err: Optional[Exception] = None
+    for dist in remaining:
+        try:
+            log(f"[INFO] Tentando fallback com JDK {dist.name} ({os_name}/{arch})")
+            archive = TEMP_DIR / f"jdk-{java_version}-{dist.name}.{dist.ext}"
+            if not download_with_retries(dist.url, archive):
+                raise RuntimeError("download_failed")
+            jdk_home = install_jdk_from_archive(java_version, archive, dist)
+            if jdk_home:
+                return jdk_home
+            last_err = RuntimeError("install_failed")
+            log(f"[WARN] Falha ao instalar JDK com {dist.name}. Tentando próximo candidato...")
+        except Exception as exc:  # noqa: PERF203 - precisamos logar o erro concreto
+            last_err = exc
+            log(f"[WARN] Falha ao preparar {dist.name}: {exc}. Tentando próximo candidato...")
+
+    log(
+        "[ERRO] Falha ao instalar JDK após testar "
+        f"{len(remaining)} distribuidores. Último erro: {last_err}"
+    )
+    return None
+
+
 def locate_existing_maven(java_version: str, os_name: str) -> Optional[Tuple[Path, Path]]:
     """Check if Maven already exists for the JDK version."""
 
@@ -965,6 +1005,9 @@ def process_project(project_dir: Path) -> None:
     if jdk_home is None and jdk_download is not None:
         archive, dist = jdk_download
         jdk_home = install_jdk_from_archive(java_version, archive, dist)
+        if not jdk_home:
+            log("[WARN] Instalação inicial do JDK falhou; tentando distribuidores alternativos.")
+            jdk_home = install_jdk_with_fallback(java_version, os_name, arch, {dist})
         if not jdk_home:
             log("[ERRO] Instalação JDK falhou. Abortando para este projeto.")
             return
