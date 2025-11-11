@@ -53,6 +53,7 @@ import sys
 import tarfile
 import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -188,70 +189,70 @@ JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
     # Java 8
     "8": {
         ("windows", "x86_64"): [
-            temurin_latest_dist("8", "windows", "x86_64"),
             corretto_latest_dist("8", "windows", "x86_64"),
+            temurin_latest_dist("8", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
-            temurin_latest_dist("8", "linux", "x86_64"),
             corretto_latest_dist("8", "linux", "x86_64"),
+            temurin_latest_dist("8", "linux", "x86_64"),
         ],
         ("linux", "aarch64"): [
-            temurin_latest_dist("8", "linux", "aarch64"),
             corretto_latest_dist("8", "linux", "aarch64"),
+            temurin_latest_dist("8", "linux", "aarch64"),
         ],
         ("macos", "x86_64"): [
-            temurin_latest_dist("8", "macos", "x86_64"),
             corretto_latest_dist("8", "macos", "x86_64"),
+            temurin_latest_dist("8", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [
-            temurin_latest_dist("8", "macos", "aarch64"),
             corretto_latest_dist("8", "macos", "aarch64"),
+            temurin_latest_dist("8", "macos", "aarch64"),
         ],
     },
     # Java 11
     "11": {
         ("windows", "x86_64"): [
-            temurin_latest_dist("11", "windows", "x86_64"),
             corretto_latest_dist("11", "windows", "x86_64"),
+            temurin_latest_dist("11", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
-            temurin_latest_dist("11", "linux", "x86_64"),
             corretto_latest_dist("11", "linux", "x86_64"),
+            temurin_latest_dist("11", "linux", "x86_64"),
         ],
         ("linux", "aarch64"): [
-            temurin_latest_dist("11", "linux", "aarch64"),
             corretto_latest_dist("11", "linux", "aarch64"),
+            temurin_latest_dist("11", "linux", "aarch64"),
         ],
         ("macos", "x86_64"): [
-            temurin_latest_dist("11", "macos", "x86_64"),
             corretto_latest_dist("11", "macos", "x86_64"),
+            temurin_latest_dist("11", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [
-            temurin_latest_dist("11", "macos", "aarch64"),
             corretto_latest_dist("11", "macos", "aarch64"),
+            temurin_latest_dist("11", "macos", "aarch64"),
         ],
     },
     # Java 17
     "17": {
         ("windows", "x86_64"): [
-            temurin_latest_dist("17", "windows", "x86_64"),
             corretto_latest_dist("17", "windows", "x86_64"),
+            temurin_latest_dist("17", "windows", "x86_64"),
         ],
         ("linux", "x86_64"): [
-            temurin_latest_dist("17", "linux", "x86_64"),
             corretto_latest_dist("17", "linux", "x86_64"),
+            temurin_latest_dist("17", "linux", "x86_64"),
         ],
         ("linux", "aarch64"): [
-            temurin_latest_dist("17", "linux", "aarch64"),
             corretto_latest_dist("17", "linux", "aarch64"),
+            temurin_latest_dist("17", "linux", "aarch64"),
         ],
         ("macos", "x86_64"): [
-            temurin_latest_dist("17", "macos", "x86_64"),
             corretto_latest_dist("17", "macos", "x86_64"),
+            temurin_latest_dist("17", "macos", "x86_64"),
         ],
         ("macos", "aarch64"): [
-            temurin_latest_dist("17", "macos", "aarch64"),
             corretto_latest_dist("17", "macos", "aarch64"),
+            temurin_latest_dist("17", "macos", "aarch64"),
         ],
     },
     # Java 21
@@ -662,7 +663,16 @@ def ensure_settings_xml() -> None:
 # ==========================
 
 def update_vscode_settings(project_dir: Path, java_home: Path, maven_bin: Path) -> None:
-    """Update .vscode/settings.json with java.home and maven.executable.path."""
+    """Update .vscode/settings.json with the expected Java/Maven VS Code settings."""
+
+    def as_vscode_user_path(target: Path) -> str:
+        """Render paths using the ${userHome} placeholder to keep configs portable."""
+
+        home_posix = HOME.as_posix()
+        target_posix = target.as_posix()
+        if target_posix.startswith(home_posix):
+            return target_posix.replace(home_posix, "${userHome}", 1)
+        return target_posix
 
     vscode_dir = project_dir / ".vscode"
     vscode_dir.mkdir(parents=True, exist_ok=True)
@@ -673,10 +683,21 @@ def update_vscode_settings(project_dir: Path, java_home: Path, maven_bin: Path) 
             data = json.loads(settings_file.read_text(encoding="utf-8"))
         except Exception:
             data = {}
-    # Atualizar/mesclar chaves
-    data["java.home"] = str(java_home)
-    data["maven.executable.path"] = str(maven_bin)
-    # Outras chaves podem ser mantidas
+
+    java_home_path = as_vscode_user_path(java_home)
+    maven_bin_path = as_vscode_user_path(maven_bin)
+    user_settings_path = as_vscode_user_path(M2_DIR / "settings.xml")
+
+    # Atualizar/mesclar chaves relevantes
+    data.pop("java.home", None)
+    data["java.jdt.ls.java.home"] = java_home_path
+    data["java.jdt.ls.lombokSupport.enabled"] = True
+    data["maven.executable.preferMavenWrapper"] = True
+    data["maven.executable.path"] = maven_bin_path
+    data["java.compile.nullAnalysis.mode"] = "automatic"
+    data["java.configuration.updateBuildConfiguration"] = "automatic"
+    data["java.configuration.maven.userSettings"] = user_settings_path
+
     settings_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     log(f"[OK] Atualizado {settings_file}")
 
@@ -701,7 +722,7 @@ def select_jdk_dist(java_version: str, os_name: str, arch: str) -> List[JdkDist]
                 candidates.append(oracle_latest_dist(java_version, os_name, arch))
             except ValueError:
                 pass
-        for factory in (temurin_latest_dist, corretto_latest_dist):
+        for factory in (corretto_latest_dist, temurin_latest_dist):
             try:
                 candidates.append(factory(java_version, os_name, arch))
             except ValueError:
@@ -737,7 +758,7 @@ def ensure_jdk(java_version: str, os_name: str, arch: str) -> Optional[Path]:
     for dist in candidates:
         try:
             log(f"[INFO] Tentando JDK de {dist.name} para Java {java_version} ({os_name}/{arch})")
-            archive_name = f"jdk-{java_version}-{dist.name}.{dist.ext.replace('.', '_')}"
+            archive_name = f"jdk-{java_version}-{dist.name}.{dist.ext}"
             archive_path = TEMP_DIR / archive_name
             if not download_with_retries(dist.url, archive_path):
                 raise RuntimeError("download_failed")
@@ -779,63 +800,36 @@ def ensure_jdk(java_version: str, os_name: str, arch: str) -> Optional[Path]:
 def ensure_maven(java_version: str, os_name: str) -> Optional[Tuple[Path, Path]]:
     """Install a Maven distribution tied to the selected JDK and return paths."""
 
-    # Retorna (maven_home, maven_bin)
     jdk_base = JAENVTIX_HOME / f"jdk-{java_version}"
     mvn_custom = jdk_base / "mvn-custom"
     mvn_bin_dir = mvn_custom / "bin"
+    mvn_exe = mvn_bin_dir / ("mvn.cmd" if os_name == "windows" else "mvn")
     mvn_bin_dir.mkdir(parents=True, exist_ok=True)
 
-    # Se já existir mvn em bin, retornar
-    mvn_exe = mvn_bin_dir / ("mvn.cmd" if os_name == "windows" else "mvn")
     if mvn_exe.exists():
         return mvn_custom, mvn_exe
 
-    # Baixar Maven
-    url = MAVEN_URLS.get(DEFAULT_MAVEN_VERSION, {}).get(os_name)
-    if not url:
-        log(f"[ERRO] Maven não suportado para SO {os_name}")
-        return None
-    archive = TEMP_DIR / f"apache-maven-{DEFAULT_MAVEN_VERSION}-bin.{('zip' if os_name=='windows' else 'tar.gz')}"
-    if not download_with_retries(url, archive):
+    distro = _resolve_maven_distro(os_name)
+    if distro is None:
         return None
 
-    # Extrair para mvn-custom
-    tmp_extract = TEMP_DIR / f"maven-extract-{DEFAULT_MAVEN_VERSION}"
-    if tmp_extract.exists():
-        shutil.rmtree(tmp_extract, ignore_errors=True)
-    tmp_extract.mkdir(parents=True, exist_ok=True)
-
-    if not extract_archive(archive, tmp_extract):
+    url, ext = distro
+    archive = TEMP_DIR / f"apache-maven-{DEFAULT_MAVEN_VERSION}-bin.{ext}"
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    if not _download_maven_distribution(url, archive):
         return None
 
-    # Mover conteúdo para mvn-custom
-    extracted_root = None
-    for ch in tmp_extract.iterdir():
-        if ch.is_dir() and ch.name.startswith("apache-maven-"):
-            extracted_root = ch
-            break
-    if not extracted_root:
-        log("[ERRO] Estrutura inesperada após extrair Maven.")
+    extracted = _extract_maven_archive(archive)
+    if extracted is None:
         return None
+    extracted_root, extract_dir = extracted
 
-    # mover tudo para mvn-custom
-    for item in extracted_root.iterdir():
-        dest = mvn_custom / item.name
-        if dest.exists():
-            if dest.is_dir():
-                shutil.rmtree(dest, ignore_errors=True)
-            else:
-                dest.unlink(missing_ok=True)
-        if item.is_dir():
-            shutil.copytree(item, dest)
-        else:
-            shutil.copy2(item, dest)
+    if mvn_custom.exists():
+        shutil.rmtree(mvn_custom, ignore_errors=True)
+    shutil.move(str(extracted_root), str(mvn_custom))
+    shutil.rmtree(extract_dir, ignore_errors=True)
 
-    # Garantir executável
-    if os_name == "windows":
-        mvn_exe = mvn_bin_dir / "mvn.cmd"
-    else:
-        mvn_exe = mvn_bin_dir / "mvn"
+    if os_name != "windows":
         try:
             mvn_exe.chmod(0o755)
         except Exception:
@@ -843,6 +837,45 @@ def ensure_maven(java_version: str, os_name: str) -> Optional[Tuple[Path, Path]]
 
     log(f"[OK] Maven instalado em: {mvn_custom}")
     return mvn_custom, mvn_exe
+
+
+def _resolve_maven_distro(os_name: str) -> Optional[Tuple[str, str]]:
+    """Return the (url, extension) tuple for the configured Maven version."""
+
+    url = MAVEN_URLS.get(DEFAULT_MAVEN_VERSION, {}).get(os_name)
+    if not url:
+        log(f"[ERRO] Maven não suportado para SO {os_name}")
+        return None
+    ext = "zip" if os_name == "windows" else "tar.gz"
+    return url, ext
+
+
+def _download_maven_distribution(url: str, archive: Path) -> bool:
+    """Download the Maven archive unless a previous valid copy exists."""
+
+    if archive.exists() and archive.stat().st_size > 0:
+        log(f"[INFO] Reutilizando artefato Maven existente: {archive}")
+        return True
+    return download_with_retries(url, archive)
+
+
+def _extract_maven_archive(archive: Path) -> Optional[Tuple[Path, Path]]:
+    """Extract Maven archive and return its root directory plus the temp folder."""
+
+    extract_dir = TEMP_DIR / f"maven-extract-{DEFAULT_MAVEN_VERSION}"
+    if extract_dir.exists():
+        shutil.rmtree(extract_dir, ignore_errors=True)
+    extract_dir.mkdir(parents=True, exist_ok=True)
+
+    if not extract_archive(archive, extract_dir):
+        return None
+
+    for candidate in extract_dir.iterdir():
+        if candidate.is_dir() and candidate.name.startswith("apache-maven-"):
+            return candidate, extract_dir
+
+    log("[ERRO] Estrutura inesperada após extrair Maven.")
+    return None
 
 
 # ==========================
@@ -871,18 +904,22 @@ def process_project(project_dir: Path) -> None:
 
     ensure_dirs()
 
-    jdk_home = ensure_jdk(java_version, os_name, arch)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_jdk = executor.submit(ensure_jdk, java_version, os_name, arch)
+        future_maven = executor.submit(ensure_maven, java_version, os_name)
+
+        jdk_home = future_jdk.result()
+        mvn = future_maven.result()
+
     if not jdk_home:
         log("[ERRO] Instalação JDK falhou. Abortando para este projeto.")
         return
 
-    maven_home, maven_bin = (None, None)
-    mvn = ensure_maven(java_version, os_name)
-    if mvn:
-        maven_home, maven_bin = mvn
-    else:
+    if not mvn:
         log("[ERRO] Instalação do Maven falhou. Abortando para este projeto.")
         return
+
+    maven_home, maven_bin = mvn
 
     # Toolchains e settings: se o projeto precisar toolchains, ainda assim manter settings.xml
     try:
