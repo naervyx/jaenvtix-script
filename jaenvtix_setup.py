@@ -88,6 +88,44 @@ class JdkDist:
     ext: str  # 'zip' ou 'tar.gz'
 
 
+@dataclass
+class ProjectContext:
+    """Single place to hold project-related state across validation steps."""
+
+    project_dir: Path
+    pom_path: Path
+    java_version: Optional[str] = None
+    os_name: Optional[str] = None
+    arch: Optional[str] = None
+    jdk_home: Optional[Path] = None
+    maven_home: Optional[Path] = None
+    maven_bin: Optional[Path] = None
+
+
+class ValidationStep:
+    """Interface for chainable validation/configuration steps."""
+
+    description: str = ""
+
+    def execute(self, ctx: ProjectContext) -> bool:
+        raise NotImplementedError
+
+
+class ValidationChain:
+    """Chain-of-responsibility runner to keep the pipeline linear and simple."""
+
+    def __init__(self, steps: List[ValidationStep]):
+        self.steps = steps
+
+    def run(self, ctx: ProjectContext) -> bool:
+        for step in self.steps:
+            log(f"[STEP] {step.description}")
+            if not step.execute(ctx):
+                log(f"[STOP] Etapa falhou: {step.description}")
+                return False
+        return True
+
+
 def oracle_latest_url(java_version: str, os_name: str, arch: str) -> Optional[Tuple[str, str]]:
     """Return the Oracle "latest" artifact URL for the requested major/OS/arch."""
 
@@ -952,6 +990,139 @@ def _extract_maven_archive(archive: Path) -> Optional[Tuple[Path, Path]]:
 
 
 # ==========================
+# Cadeia de validação/provisionamento
+# ==========================
+
+
+class JavaVersionStep(ValidationStep):
+    description = "Detectando versão Java do pom.xml"
+
+    def execute(self, ctx: ProjectContext) -> bool:
+        java_version = parse_java_version_from_pom(ctx.pom_path)
+        if not java_version:
+            log("[ERRO] Não foi possível autoconfigurar: versão Java não encontrada no pom.xml.")
+            return False
+        ctx.java_version = java_version
+        return True
+
+
+class EnvironmentStep(ValidationStep):
+    description = "Validando sistema e preparando diretórios"
+
+    def execute(self, ctx: ProjectContext) -> bool:
+        os_name, arch = detect_os_arch()
+        log(f"[INFO] SO/arch detectados: {os_name}/{arch}")
+        ctx.os_name, ctx.arch = os_name, arch
+        if arch not in ("x86_64", "aarch64"):
+            log(
+                "[ERRO] Arquitetura não suportada por este script."
+                " Apenas x64 e ARM64 (aarch64) são suportadas."
+            )
+            return False
+        ensure_dirs()
+        return True
+
+
+class RuntimeProvisionStep(ValidationStep):
+    description = "Provisionando JDK e Maven"
+
+    def execute(self, ctx: ProjectContext) -> bool:
+        if not ctx.java_version or not ctx.os_name or not ctx.arch:
+            log("[ERRO] Contexto inválido para provisionamento de runtime.")
+            return False
+
+        existing_jdk = locate_existing_jdk(ctx.java_version)
+        if existing_jdk:
+            log(f"[OK] JDK já presente: {existing_jdk}")
+
+        existing_maven = locate_existing_maven(ctx.java_version, ctx.os_name)
+        if existing_maven:
+            log(f"[OK] Maven já presente: {existing_maven[0]}")
+
+        future_jdk: Optional[Future[Optional[Tuple[Path, JdkDist]]]] = None
+        future_maven: Optional[Future[Optional[Tuple[Path, str]]]] = None
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            if not existing_jdk:
+                future_jdk = executor.submit(
+                    download_jdk_package, ctx.java_version, ctx.os_name, ctx.arch
+                )
+            if not existing_maven:
+                future_maven = executor.submit(download_maven_package, ctx.os_name)
+
+        jdk_home: Optional[Path] = existing_jdk
+        jdk_download: Optional[Tuple[Path, JdkDist]] = None
+        if future_jdk is not None:
+            jdk_download = future_jdk.result()
+            if jdk_download is None:
+                log("[ERRO] Download do JDK falhou. Abortando para este projeto.")
+                return False
+
+        if jdk_home is None and jdk_download is not None:
+            archive, dist = jdk_download
+            jdk_home = install_jdk_from_archive(ctx.java_version, archive, dist)
+            if not jdk_home:
+                log("[WARN] Instalação inicial do JDK falhou; tentando distribuidores alternativos.")
+                jdk_home = install_jdk_with_fallback(ctx.java_version, ctx.os_name, ctx.arch, {dist})
+            if not jdk_home:
+                log("[ERRO] Instalação JDK falhou. Abortando para este projeto.")
+                return False
+
+        if jdk_home is None:
+            log("[ERRO] Não foi possível preparar o JDK requerido.")
+            return False
+
+        maven_home: Optional[Path]
+        maven_bin: Optional[Path]
+        if existing_maven:
+            maven_home, maven_bin = existing_maven
+        else:
+            maven_download: Optional[Tuple[Path, str]] = None
+            if future_maven is not None:
+                maven_download = future_maven.result()
+            if not maven_download:
+                log("[ERRO] Download do Maven falhou. Abortando para este projeto.")
+                return False
+            archive, _ = maven_download
+            maven_result = install_maven_from_archive(ctx.java_version, ctx.os_name, archive)
+            if not maven_result:
+                log("[ERRO] Instalação do Maven falhou. Abortando para este projeto.")
+                return False
+            maven_home, maven_bin = maven_result
+
+        ctx.jdk_home = jdk_home
+        ctx.maven_home = maven_home
+        ctx.maven_bin = maven_bin
+        return True
+
+
+class ConfigurationStep(ValidationStep):
+    description = "Aplicando configurações do ambiente"
+
+    def execute(self, ctx: ProjectContext) -> bool:
+        if not ctx.java_version or not ctx.jdk_home or not ctx.maven_bin:
+            log("[ERRO] Contexto incompleto para configurar ambiente.")
+            return False
+
+        try:
+            merge_toolchains(ctx.java_version, ctx.jdk_home)
+        except Exception as e:
+            log(f"[WARN] Falha ao configurar toolchains: {e}")
+
+        try:
+            ensure_settings_xml()
+        except Exception as e:
+            log(f"[WARN] Falha ao garantir settings.xml: {e}")
+
+        try:
+            update_vscode_settings(ctx.project_dir, ctx.jdk_home, ctx.maven_bin)
+        except Exception as e:
+            log(f"[WARN] Falha ao atualizar VS Code settings: {e}")
+            return False
+
+        return True
+
+
+# ==========================
 # Fluxo principal por projeto
 # ==========================
 
@@ -964,91 +1135,18 @@ def process_project(project_dir: Path) -> None:
         return
 
     log(f"[INFO] Processando projeto: {project_dir}")
-    java_version = parse_java_version_from_pom(pom)
-    if not java_version:
-        log("[ERRO] Não foi possível autoconfigurar: versão Java não encontrada no pom.xml.")
-        return
+    ctx = ProjectContext(project_dir=project_dir, pom_path=pom)
+    chain = ValidationChain(
+        [
+            JavaVersionStep(),
+            EnvironmentStep(),
+            RuntimeProvisionStep(),
+            ConfigurationStep(),
+        ]
+    )
 
-    os_name, arch = detect_os_arch()
-    log(f"[INFO] SO/arch detectados: {os_name}/{arch}")
-    if arch not in ("x86_64", "aarch64"):
-        log("[ERRO] Arquitetura não suportada por este script. Apenas x64 e ARM64 (aarch64) são suportadas.")
-        return
-
-    ensure_dirs()
-
-    existing_jdk = locate_existing_jdk(java_version)
-    if existing_jdk:
-        log(f"[OK] JDK já presente: {existing_jdk}")
-
-    existing_maven = locate_existing_maven(java_version, os_name)
-    if existing_maven:
-        log(f"[OK] Maven já presente: {existing_maven[0]}")
-
-    future_jdk: Optional[Future[Optional[Tuple[Path, JdkDist]]]] = None
-    future_maven: Optional[Future[Optional[Tuple[Path, str]]]] = None
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        if not existing_jdk:
-            future_jdk = executor.submit(download_jdk_package, java_version, os_name, arch)
-        if not existing_maven:
-            future_maven = executor.submit(download_maven_package, os_name)
-
-    jdk_home: Optional[Path] = existing_jdk
-    jdk_download: Optional[Tuple[Path, JdkDist]] = None
-    if future_jdk is not None:
-        jdk_download = future_jdk.result()
-        if jdk_download is None:
-            log("[ERRO] Download do JDK falhou. Abortando para este projeto.")
-            return
-
-    if jdk_home is None and jdk_download is not None:
-        archive, dist = jdk_download
-        jdk_home = install_jdk_from_archive(java_version, archive, dist)
-        if not jdk_home:
-            log("[WARN] Instalação inicial do JDK falhou; tentando distribuidores alternativos.")
-            jdk_home = install_jdk_with_fallback(java_version, os_name, arch, {dist})
-        if not jdk_home:
-            log("[ERRO] Instalação JDK falhou. Abortando para este projeto.")
-            return
-
-    if jdk_home is None:
-        log("[ERRO] Não foi possível preparar o JDK requerido.")
-        return
-
-    maven_home: Optional[Path]
-    maven_bin: Optional[Path]
-    if existing_maven:
-        maven_home, maven_bin = existing_maven
-    else:
-        maven_download: Optional[Tuple[Path, str]] = None
-        if future_maven is not None:
-            maven_download = future_maven.result()
-        if not maven_download:
-            log("[ERRO] Download do Maven falhou. Abortando para este projeto.")
-            return
-        archive, _ = maven_download
-        maven_result = install_maven_from_archive(java_version, os_name, archive)
-        if not maven_result:
-            log("[ERRO] Instalação do Maven falhou. Abortando para este projeto.")
-            return
-        maven_home, maven_bin = maven_result
-
-    # Toolchains e settings: se o projeto precisar toolchains, ainda assim manter settings.xml
-    try:
-        merge_toolchains(java_version, jdk_home)
-    except Exception as e:
-        log(f"[WARN] Falha ao configurar toolchains: {e}")
-
-    try:
-        ensure_settings_xml()
-    except Exception as e:
-        log(f"[WARN] Falha ao garantir settings.xml: {e}")
-
-    # VS Code settings por projeto
-    try:
-        update_vscode_settings(project_dir, jdk_home, maven_bin)  # type: ignore[arg-type]
-    except Exception as e:
-        log(f"[WARN] Falha ao atualizar VS Code settings: {e}")
+    if chain.run(ctx):
+        log(f"[OK] Projeto configurado: {project_dir}")
 
 
 def cleanup_temp() -> None:
