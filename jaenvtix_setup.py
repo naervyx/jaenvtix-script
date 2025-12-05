@@ -69,6 +69,8 @@ except Exception as e:
 # Configuração e Constantes
 # ==========================
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+CONFIG_DIR = SCRIPT_DIR / "config"
 HOME = Path.home()
 JAENVTIX_HOME = HOME / ".jaenvtix"
 TEMP_DIR = JAENVTIX_HOME / "temp"
@@ -221,124 +223,59 @@ def corretto_latest_dist(java_version: str, os_name: str, arch: str) -> JdkDist:
     return JdkDist(f"Corretto{java_version}", url, ext)
 
 
-# Tabela: (java_version -> { (os, arch) -> [JdkDist, ...] })
-JDK_URLS: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {
-    # Java 8
-    "8": {
-        ("windows", "x86_64"): [
-            corretto_latest_dist("8", "windows", "x86_64"),
-            temurin_latest_dist("8", "windows", "x86_64"),
-        ],
-        ("linux", "x86_64"): [
-            corretto_latest_dist("8", "linux", "x86_64"),
-            temurin_latest_dist("8", "linux", "x86_64"),
-        ],
-        ("linux", "aarch64"): [
-            corretto_latest_dist("8", "linux", "aarch64"),
-            temurin_latest_dist("8", "linux", "aarch64"),
-        ],
-        ("macos", "x86_64"): [
-            corretto_latest_dist("8", "macos", "x86_64"),
-            temurin_latest_dist("8", "macos", "x86_64"),
-        ],
-        ("macos", "aarch64"): [
-            corretto_latest_dist("8", "macos", "aarch64"),
-            temurin_latest_dist("8", "macos", "aarch64"),
-        ],
-    },
-    # Java 11
-    "11": {
-        ("windows", "x86_64"): [
-            corretto_latest_dist("11", "windows", "x86_64"),
-            temurin_latest_dist("11", "windows", "x86_64"),
-        ],
-        ("linux", "x86_64"): [
-            corretto_latest_dist("11", "linux", "x86_64"),
-            temurin_latest_dist("11", "linux", "x86_64"),
-        ],
-        ("linux", "aarch64"): [
-            corretto_latest_dist("11", "linux", "aarch64"),
-            temurin_latest_dist("11", "linux", "aarch64"),
-        ],
-        ("macos", "x86_64"): [
-            corretto_latest_dist("11", "macos", "x86_64"),
-            temurin_latest_dist("11", "macos", "x86_64"),
-        ],
-        ("macos", "aarch64"): [
-            corretto_latest_dist("11", "macos", "aarch64"),
-            temurin_latest_dist("11", "macos", "aarch64"),
-        ],
-    },
-    # Java 17
-    "17": {
-        ("windows", "x86_64"): [
-            corretto_latest_dist("17", "windows", "x86_64"),
-            temurin_latest_dist("17", "windows", "x86_64"),
-        ],
-        ("linux", "x86_64"): [
-            corretto_latest_dist("17", "linux", "x86_64"),
-            temurin_latest_dist("17", "linux", "x86_64"),
-        ],
-        ("linux", "aarch64"): [
-            corretto_latest_dist("17", "linux", "aarch64"),
-            temurin_latest_dist("17", "linux", "aarch64"),
-        ],
-        ("macos", "x86_64"): [
-            corretto_latest_dist("17", "macos", "x86_64"),
-            temurin_latest_dist("17", "macos", "x86_64"),
-        ],
-        ("macos", "aarch64"): [
-            corretto_latest_dist("17", "macos", "aarch64"),
-            temurin_latest_dist("17", "macos", "aarch64"),
-        ],
-    },
-    # Java 21
-    "21": {
-        ("windows", "x86_64"): [
-            oracle_latest_dist("21", "windows", "x86_64"),
-        ],
-        ("linux", "x86_64"): [
-            oracle_latest_dist("21", "linux", "x86_64"),
-        ],
-        ("linux", "aarch64"): [
-            oracle_latest_dist("21", "linux", "aarch64"),
-        ],
-        ("macos", "x86_64"): [
-            oracle_latest_dist("21", "macos", "x86_64"),
-        ],
-        ("macos", "aarch64"): [
-            oracle_latest_dist("21", "macos", "aarch64"),
-        ],
-    },
-    # Java 25 LTS
-    "25": {
-        ("windows", "x86_64"): [
-            oracle_latest_dist("25", "windows", "x86_64"),
-        ],
-        ("linux", "x86_64"): [
-            oracle_latest_dist("25", "linux", "x86_64"),
-        ],
-        ("linux", "aarch64"): [
-            oracle_latest_dist("25", "linux", "aarch64"),
-        ],
-        ("macos", "x86_64"): [
-            oracle_latest_dist("25", "macos", "x86_64"),
-        ],
-        ("macos", "aarch64"): [
-            oracle_latest_dist("25", "macos", "aarch64"),
-        ],
-    },
+DIST_BUILDERS = {
+    "oracle_latest": oracle_latest_dist,
+    "temurin_latest": temurin_latest_dist,
+    "corretto_latest": corretto_latest_dist,
 }
 
-# Maven URLs
-MAVEN_URLS: Dict[str, Dict[str, str]] = {
-    # version -> { os -> url }
-    "3.9.11": {
-        "windows": "https://dlcdn.apache.org/maven/maven-3/3.9.11/binaries/apache-maven-3.9.11-bin.zip",
-        "linux": "https://dlcdn.apache.org/maven/maven-3/3.9.11/binaries/apache-maven-3.9.11-bin.tar.gz",
-        "macos": "https://dlcdn.apache.org/maven/maven-3/3.9.11/binaries/apache-maven-3.9.11-bin.tar.gz",
-    }
-}
+
+def load_jdk_urls(config_path: Path) -> Dict[str, Dict[Tuple[str, str], List[JdkDist]]]:
+    """Load JDK URL mappings from a JSON file."""
+
+    if not config_path.exists():
+        raise FileNotFoundError(f"Missing JDK URL configuration: {config_path}")
+
+    with config_path.open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
+
+    mapping: Dict[str, Dict[Tuple[str, str], List[JdkDist]]] = {}
+    for java_version, combos in data.items():
+        mapping[java_version] = {}
+        for combo_key, dist_names in combos.items():
+            try:
+                os_name, arch = combo_key.split("|", 1)
+            except ValueError:
+                log(f"[WARN] Invalid os|arch key in JDK config: {combo_key}")
+                continue
+            dists: List[JdkDist] = []
+            for dist_name in dist_names:
+                builder = DIST_BUILDERS.get(dist_name)
+                if not builder:
+                    log(f"[WARN] Unknown JDK distribution key: {dist_name}")
+                    continue
+                try:
+                    dists.append(builder(java_version, os_name, arch))
+                except Exception as exc:  # noqa: BLE001
+                    log(f"[WARN] Failed to build JDK distribution {dist_name} for {combo_key}: {exc}")
+            if dists:
+                mapping[java_version][(os_name, arch)] = dists
+    return mapping
+
+
+def load_maven_urls(config_path: Path) -> Dict[str, Dict[str, str]]:
+    """Load Maven URL mappings from a JSON file."""
+
+    if not config_path.exists():
+        raise FileNotFoundError(f"Missing Maven URL configuration: {config_path}")
+
+    with config_path.open("r", encoding="utf-8") as handle:
+        data: Dict[str, Dict[str, str]] = json.load(handle)
+    return data
+
+
+JDK_URLS = load_jdk_urls(CONFIG_DIR / "jdk_urls.json")
+MAVEN_URLS = load_maven_urls(CONFIG_DIR / "maven_urls.json")
 
 
 # ==========================
