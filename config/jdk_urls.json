@@ -1,0 +1,37 @@
+{
+  "8": {
+    "windows|x86_64": ["corretto_latest", "temurin_latest"],
+    "linux|x86_64": ["corretto_latest", "temurin_latest"],
+    "linux|aarch64": ["corretto_latest", "temurin_latest"],
+    "macos|x86_64": ["corretto_latest", "temurin_latest"],
+    "macos|aarch64": ["corretto_latest", "temurin_latest"]
+  },
+  "11": {
+    "windows|x86_64": ["corretto_latest", "temurin_latest"],
+    "linux|x86_64": ["corretto_latest", "temurin_latest"],
+    "linux|aarch64": ["corretto_latest", "temurin_latest"],
+    "macos|x86_64": ["corretto_latest", "temurin_latest"],
+    "macos|aarch64": ["corretto_latest", "temurin_latest"]
+  },
+  "17": {
+    "windows|x86_64": ["corretto_latest", "temurin_latest"],
+    "linux|x86_64": ["corretto_latest", "temurin_latest"],
+    "linux|aarch64": ["corretto_latest", "temurin_latest"],
+    "macos|x86_64": ["corretto_latest", "temurin_latest"],
+    "macos|aarch64": ["corretto_latest", "temurin_latest"]
+  },
+  "21": {
+    "windows|x86_64": ["oracle_latest"],
+    "linux|x86_64": ["oracle_latest"],
+    "linux|aarch64": ["oracle_latest"],
+    "macos|x86_64": ["oracle_latest"],
+    "macos|aarch64": ["oracle_latest"]
+  },
+  "25": {
+    "windows|x86_64": ["oracle_latest"],
+    "linux|x86_64": ["oracle_latest"],
+    "linux|aarch64": ["oracle_latest"],
+    "macos|x86_64": ["oracle_latest"],
+    "macos|aarch64": ["oracle_latest"]
+  }
+}
